@@ -1,0 +1,441 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { ConfettiLayer, fireConfetti } from "@/components/Confetti";
+import { RotateCcw, Sparkles, Trophy } from "lucide-react";
+
+export const Route = createFileRoute("/")({
+  component: Index,
+  head: () => ({
+    meta: [
+      { title: "The Useless Button — Click Responsibly" },
+      {
+        name: "description",
+        content:
+          "A beautifully useless button that celebrates every click with confetti, achievements, and escalating absurdity.",
+      },
+      { property: "og:title", content: "The Useless Button" },
+      {
+        property: "og:description",
+        content: "Click it. You know you want to. It does nothing useful.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+});
+
+interface Achievement {
+  id: string;
+  threshold: number;
+  title: string;
+  description: string;
+  icon: string;
+}
+
+const ACHIEVEMENTS: Achievement[] = [
+  { id: "first", threshold: 1, title: "First Contact", description: "You pressed a button. The world changed slightly.", icon: "👋" },
+  { id: "ten", threshold: 10, title: "Tenacious", description: "Still going. Still no purpose.", icon: "🔟" },
+  { id: "fifty", threshold: 50, title: "Button Enthusiast", description: "You've developed a genuine hobby.", icon: "🎖️" },
+  { id: "hundred", threshold: 100, title: "Centurion Clicker", description: "One hundred clicks. Zero productivity.", icon: "💯" },
+  { id: "two-fifty", threshold: 250, title: "Thumb Warrior", description: "Your index finger could star in an action movie.", icon: "🥷" },
+  { id: "five-hundred", threshold: 500, title: "The Button Whisperer", description: "You and the button are basically dating now.", icon: "💅" },
+  { id: "thousand", threshold: 1000, title: "Millennial", description: "A thousand clicks. Consider therapy?", icon: "🧠" },
+  { id: "two-thousand", threshold: 2000, title: "Chaos Agent", description: "The button fears you. Society fears you.", icon: "🔥" },
+  { id: "five-thousand", threshold: 5000, title: "Legendary Idler", description: "You have transcended usefulness entirely.", icon: "👑" },
+];
+
+const QUOTES = [
+  "That did something. Probably.",
+  "Nice click.",
+  "The button felt that.",
+  "Click harder. The universe is watching.",
+  "Statistically significant.",
+  "You are now 0.0001% happier.",
+  "A click is a tiny high-five with the universe.",
+  "Keep going. No reason. Just vibes.",
+  "This button has never been clicked quite like that.",
+  "The developers are proud and confused.",
+  "You have unlocked the concept of pressing.",
+  "Somewhere, a server logged that.",
+  "Clickonomy is booming.",
+  "Your dedication is both admirable and concerning.",
+  "That click had main character energy.",
+];
+
+const MILESTONE_REACTIONS: Record<number, string> = {
+  10: "Double digits! The button is blushing.",
+  25: "25! You're not stopping, are you?",
+  50: "Half-century of human excellence.",
+  69: "Nice.",
+  100: "ONE HUNDRED. The button now knows your name.",
+  200: "The button is getting tired. You're not.",
+  300: "300 clicks. You could have learned a language.",
+  404: "Achievement not found. But clicks are.",
+  500: "The button is considering retirement.",
+  666: "The button has briefly turned evil.",
+  777: "Jackpot! No prize, though.",
+  1000: "A THOUSAND. Your ancestors are bewildered.",
+  1234: "Sequential! Chef's kiss.",
+  2000: "The button has achieved sentience and is scared.",
+  3000: "Three thousand. Local birds are impressed.",
+  4040: "Page not found. Clicks still found.",
+  5000: "Five thousand. You have won the game of life.",
+};
+
+function playClickSound(count: number) {
+  if (typeof window === "undefined") return;
+  try {
+    const AudioCtx = (window as never as { AudioContext?: typeof AudioContext }).AudioContext ||
+      (window as never as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const base = 220 + Math.min(count * 2, 600);
+    const freq = base + Math.random() * 200;
+    osc.type = Math.random() > 0.7 ? "square" : "sine";
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.5, ctx.currentTime + 0.12);
+
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+  } catch {
+    // audio is optional fun
+  }
+}
+
+function formatCount(n: number) {
+  return n.toLocaleString();
+}
+
+function Index() {
+  const [count, setCount] = useState(0);
+  const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
+  const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
+  const [mounted, setMounted] = useState(false);
+  const [shakeKey, setShakeKey] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [isGiant, setIsGiant] = useState(false);
+  const [cps, setCps] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [bestCombo, setBestCombo] = useState(0);
+  const clickTimesRef = useRef<number[]>([]);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const toastIdRef = useRef(0);
+
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const saved = localStorage.getItem("useless-count");
+      const savedAchievements = localStorage.getItem("useless-achievements");
+      if (saved) setCount(parseInt(saved, 10) || 0);
+      if (savedAchievements) setUnlocked(new Set(JSON.parse(savedAchievements) as string[]));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    localStorage.setItem("useless-count", String(count));
+    localStorage.setItem("useless-achievements", JSON.stringify([...unlocked]));
+  }, [count, unlocked, mounted]);
+
+  const addToast = (text: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev.slice(-4), { id, text }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3200);
+  };
+
+  const triggerConfetti = (multiplier = 1) => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const y = rect ? rect.top + rect.height / 2 : window.innerHeight / 2;
+    fireConfetti(x, y, Math.min(60 * multiplier, 300), multiplier);
+  };
+
+  // combo decay: resets if you stop clicking for 1.5s
+  useEffect(() => {
+    if (combo === 0) return;
+    const t = setTimeout(() => {
+      setCombo(0);
+      clickTimesRef.current = [];
+      setCps(0);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [combo, count]);
+
+  const mood = (() => {
+    if (cps >= 8) return { label: "🤯 OVERCLOCKED", color: "text-neon-pink" };
+    if (cps >= 5) return { label: "🔥 FURIOUS", color: "text-neon-amber" };
+    if (cps >= 3) return { label: "😤 FOCUSED", color: "text-neon-cyan" };
+    if (count >= 1000) return { label: "👑 TRANSCENDENT", color: "text-neon-lime" };
+    if (count >= 100) return { label: "😏 WARMED UP", color: "text-neon-lime" };
+    if (count > 0) return { label: "🙂 CURIOUS", color: "text-muted-foreground" };
+    return { label: "😴 DORMANT", color: "text-muted-foreground" };
+  })();
+
+  const handleClick = () => {
+    const nextCount = count + 1;
+    setCount(nextCount);
+    playClickSound(nextCount);
+    setShakeKey((k) => k + 1);
+
+    // CPS + combo tracking (last 1s window)
+    const now = Date.now();
+    clickTimesRef.current = [...clickTimesRef.current.filter((t) => now - t < 1000), now];
+    setCps(clickTimesRef.current.length);
+    setCombo((c) => {
+      const next = c + 1;
+      setBestCombo((b) => Math.max(b, next));
+      return next;
+    });
+
+    // milestone reactions
+    if (MILESTONE_REACTIONS[nextCount]) {
+      addToast(MILESTONE_REACTIONS[nextCount]!);
+      triggerConfetti(1 + Math.floor(nextCount / 200));
+    } else if (nextCount % 25 === 0) {
+      addToast(` ${nextCount} clicks! The button respects your hustle.`);
+      triggerConfetti(1);
+    } else {
+      const quote = QUOTES[Math.floor(Math.random() * QUOTES.length)] ?? "";
+      if (quote && Math.random() > 0.92) addToast(quote);
+    }
+
+    // achievements
+    ACHIEVEMENTS.forEach((ach) => {
+      if (nextCount >= ach.threshold && !unlocked.has(ach.id)) {
+        setUnlocked((prev) => new Set(prev).add(ach.id));
+        setTimeout(() => {
+          addToast(`${ach.icon} Achievement unlocked: ${ach.title}`);
+          triggerConfetti(2);
+        }, 200);
+      }
+    });
+
+    // escalating effects
+    if (nextCount >= 100 && nextCount % 100 === 0) {
+      setIsSpinning(true);
+      setTimeout(() => setIsSpinning(false), 2500);
+    }
+    if (nextCount === 500) {
+      setIsGiant(true);
+      setTimeout(() => setIsGiant(false), 1500);
+    }
+
+    // combo celebrations
+    const newCombo = combo + 1;
+    if (newCombo === 20) addToast("⚡ 20-click combo! Your finger is a machine.");
+    if (newCombo === 50) addToast("⚡ 50-click combo! Seek help. Or don't.");
+    if (newCombo === 100) {
+      addToast("💥 100-COMBO! The button has filed a complaint.");
+      triggerConfetti(3);
+    }
+  };
+
+  const reset = () => {
+    setCount(0);
+    setUnlocked(new Set());
+    setToasts([]);
+    setCombo(0);
+    setBestCombo(0);
+    setCps(0);
+    clickTimesRef.current = [];
+    addToast("Progress wiped. Fresh start. Same pointlessness.");
+  };
+
+  const latestAchievement = [...unlocked].pop();
+  const progressToNext = ACHIEVEMENTS.find((a) => !unlocked.has(a.id));
+
+  if (!mounted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-6 py-12 text-foreground">
+      <ConfettiLayer />
+
+      {/* Background ambient blobs */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-20 top-1/4 h-72 w-72 rounded-full bg-neon-pink/15 blur-[100px] animate-float" />
+        <div className="absolute -right-20 bottom-1/4 h-80 w-80 rounded-full bg-neon-cyan/15 blur-[110px] animate-float [animation-delay:-2s]" />
+        <div className="absolute left-1/3 top-1/2 h-64 w-64 rounded-full bg-neon-lime/10 blur-[90px] animate-float [animation-delay:-4s]" />
+      </div>
+
+      <main className="relative z-10 flex w-full max-w-2xl flex-col items-center text-center">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-4 py-1.5 text-sm text-muted-foreground backdrop-blur-sm">
+          <Sparkles className="h-4 w-4 text-neon-cyan" />
+          <span>Officially certified useless</span>
+        </div>
+
+        <h1 className="text-balance text-5xl font-extrabold tracking-tight sm:text-6xl">
+          <span className="bg-gradient-to-r from-neon-pink via-neon-cyan to-neon-lime bg-clip-text text-transparent">
+            The Useless Button
+          </span>
+        </h1>
+        <p className="mt-4 max-w-md text-lg text-muted-foreground">
+          It does nothing productive. Yet every click feels incredible.
+        </p>
+
+        <div className="mt-10 flex flex-col items-center gap-6">
+          <div className="rounded-2xl border border-border bg-card/70 px-8 py-4 backdrop-blur-sm">
+            <div className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Clicks wasted
+            </div>
+            <div
+              key={shakeKey}
+              className="animate-pop mt-1 text-6xl font-black tabular-nums text-foreground sm:text-7xl"
+            >
+              {formatCount(count)}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs font-semibold">
+            <span className={`rounded-full border border-border bg-card/60 px-3 py-1.5 backdrop-blur-sm ${mood.color}`}>
+              Button mood: {mood.label}
+            </span>
+            <span className="rounded-full border border-border bg-card/60 px-3 py-1.5 text-muted-foreground backdrop-blur-sm">
+              ⚡ {cps} clicks/sec
+            </span>
+            {combo > 1 && (
+              <span className="animate-pop rounded-full border border-neon-pink/40 bg-neon-pink/15 px-3 py-1.5 text-neon-pink">
+                {combo}x combo
+              </span>
+            )}
+            {bestCombo > 4 && (
+              <span className="rounded-full border border-border bg-card/60 px-3 py-1.5 text-muted-foreground backdrop-blur-sm">
+                Best combo: {bestCombo}
+              </span>
+            )}
+          </div>
+
+          <button
+            ref={buttonRef}
+            onClick={handleClick}
+            className={`
+              relative z-20 select-none rounded-full border-0 bg-gradient-to-br from-primary to-neon-cyan
+              px-12 py-10 text-2xl font-black text-primary-foreground shadow-[0_0_60px_-10px_var(--glow)]
+              transition-all duration-150 ease-out hover:scale-105 hover:shadow-[0_0_90px_-10px_var(--glow)]
+              active:scale-95 active:duration-75
+              ${isSpinning ? "animate-spin-slow" : ""}
+              ${isGiant ? "scale-125" : ""}
+              ${count >= 1000 ? "animate-pulse-glow" : ""}
+            `}
+            style={{
+              animation: count >= 100 && count < 1000 ? "wiggle 2s ease-in-out infinite" : undefined,
+            }}
+            aria-label="Click the useless button"
+          >
+            {count >= 5000 ? "👑 CLICK ME, LEGEND" : count >= 1000 ? "✨ CLICK ME FOREVER" : count >= 100 ? "🔥 CLICK ME HARDER" : "CLICK ME"}
+          </button>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={reset}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-5 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Reset existence
+            </button>
+          </div>
+        </div>
+
+        {progressToNext && (
+          <div className="mt-8 w-full max-w-sm">
+            <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Next achievement</span>
+              <span>
+                {formatCount(count)} / {formatCount(progressToNext.threshold)}
+              </span>
+            </div>
+            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-neon-pink to-neon-cyan transition-all duration-500"
+                style={{
+                  width: `${Math.min((count / progressToNext.threshold) * 100, 100)}%`,
+                }}
+              />
+            </div>
+            <div className="mt-2 text-sm font-medium text-foreground">
+              {progressToNext.title}
+            </div>
+          </div>
+        )}
+
+        {latestAchievement && (
+          <div className="mt-8 animate-achievement rounded-2xl border border-neon-cyan/30 bg-neon-cyan/10 px-6 py-4 backdrop-blur-sm">
+            <div className="flex items-center justify-center gap-2 text-sm font-semibold text-neon-cyan">
+              <Trophy className="h-4 w-4" />
+              Latest achievement
+            </div>
+            <div className="mt-1 text-lg font-bold text-foreground">
+              {ACHIEVEMENTS.find((a) => a.id === latestAchievement)?.title}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {ACHIEVEMENTS.find((a) => a.id === latestAchievement)?.description}
+            </div>
+          </div>
+        )}
+
+        {unlocked.size > 0 && (
+          <div className="mt-10 w-full">
+            <h2 className="mb-4 text-lg font-bold text-foreground">
+              Achievement wall ({unlocked.size}/{ACHIEVEMENTS.length})
+            </h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {ACHIEVEMENTS.map((ach) => {
+                const isUnlocked = unlocked.has(ach.id);
+                return (
+                  <div
+                    key={ach.id}
+                    className={`
+                      flex items-start gap-3 rounded-xl border p-4 transition-all
+                      ${isUnlocked ? "border-neon-lime/40 bg-neon-lime/10" : "border-border bg-card/40 opacity-60"}
+                    `}
+                  >
+                    <div className="text-2xl">{isUnlocked ? ach.icon : "🔒"}</div>
+                    <div className="text-left">
+                      <div className="font-semibold text-foreground">{ach.title}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {ach.description}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Toast stack */}
+      <div className="fixed bottom-6 left-1/2 z-40 flex w-full max-w-md -translate-x-1/2 flex-col items-center gap-2 px-4">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className="animate-achievement w-full rounded-xl border border-neon-pink/30 bg-card/90 px-5 py-3 text-center text-sm font-semibold text-foreground shadow-lg backdrop-blur-md"
+          >
+            {toast.text}
+          </div>
+        ))}
+      </div>
+
+      <footer className="relative z-10 mt-16 text-sm text-muted-foreground">
+        No data leaves your browser. Your clicks are yours alone.
+      </footer>
+    </div>
+  );
+}
