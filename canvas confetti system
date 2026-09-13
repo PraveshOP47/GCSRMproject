@@ -1,1 +1,161 @@
+import { useEffect, useRef } from "react";
+
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  color: string;
+  size: number;
+  rotation: number;
+  rotationSpeed: number;
+  drag: number;
+  gravity: number;
+  life: number;
+  decay: number;
+  shape: "circle" | "square" | "triangle";
+}
+
+const PALETTE = [
+  "#ff4ecd", // neon pink
+  "#00e5ff", // neon cyan
+  "#b8ff00", // neon lime
+  "#ffb800", // neon amber
+  "#ff5e5e", // coral
+  "#a855f7", // purple
+  "#ffffff", // white
+];
+
+export function fireConfetti(
+  originX: number,
+  originY: number,
+  count: number = 80,
+  spread: number = 1
+) {
+  const event = new CustomEvent("fire-confetti", {
+    detail: { x: originX, y: originY, count, spread },
+  });
+  window.dispatchEvent(event);
+}
+
+export function ConfettiLayer() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const particlesRef = useRef<Particle[]>([]);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const handleFire = (e: Event) => {
+      const custom = e as CustomEvent<{
+        x: number;
+        y: number;
+        count: number;
+        spread: number;
+      }>;
+      const { x, y, count, spread } = custom.detail;
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 14 * spread + 4;
+        const shapeRoll = Math.random();
+        let shape: Particle["shape"] = "circle";
+        if (shapeRoll > 0.6) shape = "square";
+        else if (shapeRoll > 0.3) shape = "triangle";
+
+        particlesRef.current.push({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - Math.random() * 6,
+          color: PALETTE[Math.floor(Math.random() * PALETTE.length)] ?? "#ffffff",
+          size: Math.random() * 6 + 3,
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: (Math.random() - 0.5) * 0.4,
+          drag: 0.96,
+          gravity: 0.35,
+          life: 1,
+          decay: Math.random() * 0.015 + 0.008,
+          shape,
+        });
+      }
+    };
+
+    window.addEventListener("fire-confetti" as never, handleFire);
+
+    const drawParticle = (p: Particle) => {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+
+      if (p.shape === "circle") {
+        ctx.beginPath();
+        ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.shape === "square") {
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(0, -p.size / 2);
+        ctx.lineTo(p.size / 2, p.size / 2);
+        ctx.lineTo(-p.size / 2, p.size / 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    };
+
+    const loop = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const particles = particlesRef.current;
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        if (!p) continue;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += p.gravity;
+        p.vx *= p.drag;
+        p.vy *= p.drag;
+        p.rotation += p.rotationSpeed;
+        p.life -= p.decay;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        } else {
+          drawParticle(p);
+        }
+      }
+
+      rafRef.current = requestAnimationFrame(loop);
+    };
+
+    loop();
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("fire-confetti" as never, handleFire);
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      className="pointer-events-none fixed inset-0 z-50"
+    />
+  );
+}
 
